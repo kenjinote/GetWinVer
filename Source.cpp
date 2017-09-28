@@ -2,8 +2,6 @@
 
 #include <windows.h>
 
-TCHAR szClassName[] = TEXT("Window");
-
 void GetWindowsVersion(HWND hEdit)
 {
 	DWORD dwVersion = GetVersion();
@@ -14,27 +12,49 @@ void GetWindowsVersion(HWND hEdit)
 	if (dwVersion < 0x80000000)
 		dwBuild = (DWORD)(HIWORD(dwVersion));
 
-	const HMODULE hModule = LoadLibrary(TEXT("ntdll.dll"));
+	// RtlGetVersion 関数が使える場合は使う
+	const HMODULE hModule = GetModuleHandle(TEXT("ntdll.dll"));
 	if (hModule)
 	{
-		typedef void (WINAPI*RtlGetVersion)(OSVERSIONINFOEXW*);
-		RtlGetVersion func = (RtlGetVersion)GetProcAddress(hModule, "RtlGetVersion");
-		if (func)
+		typedef void (WINAPI*fnRtlGetVersion)(OSVERSIONINFOEXW*);
+		fnRtlGetVersion RtlGetVersion = (fnRtlGetVersion)GetProcAddress(hModule, "RtlGetVersion");
+		if (RtlGetVersion)
 		{
 			OSVERSIONINFOEXW osw = { sizeof(OSVERSIONINFOEXW) };
-			func(&osw);
+			RtlGetVersion(&osw);
 			dwMajorVersion = osw.dwMajorVersion;
 			dwMinorVersion = osw.dwMinorVersion;
 			dwBuild = osw.dwBuildNumber;
 		}
-		FreeLibrary(hModule);
+	}
+
+	// レジストリに UBR の値が存在する場合は取得する
+	DWORD dwUBR = 0;
+	BOOL bExist = FALSE;
+	{
+		HKEY hKey;
+		if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"), 0, KEY_READ, &hKey))
+		{
+			DWORD dwType = REG_DWORD;
+			DWORD dwByte = sizeof(DWORD);
+			if (ERROR_SUCCESS == RegQueryValueEx(hKey, TEXT("UBR"), 0, &dwType, (LPBYTE)&dwUBR, &dwByte))
+			{
+				bExist = TRUE;
+			}
+			RegCloseKey(hKey);
+		}
 	}
 
 	TCHAR szText[1024];
-	wsprintf(szText, TEXT("Version is %d.%d (Build %d)\r\n"),
-		dwMajorVersion,
-		dwMinorVersion,
-		dwBuild);
+	if (bExist)
+	{
+		wsprintf(szText, TEXT("Version is %d.%d (Build %d.%d)\r\n"), dwMajorVersion, dwMinorVersion, dwBuild, dwUBR);
+	}
+	else
+	{
+		wsprintf(szText, TEXT("Version is %d.%d (Build %d)\r\n"), dwMajorVersion, dwMinorVersion, dwBuild);
+	}
+
 	SetWindowText(hEdit, szText);
 }
 
@@ -63,6 +83,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPSTR pCmdLine, int nCmdShow)
 {
+	TCHAR szClassName[] = TEXT("Window");
 	MSG msg;
 	WNDCLASS wndclass = {
 		CS_HREDRAW | CS_VREDRAW,
