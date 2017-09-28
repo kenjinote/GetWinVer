@@ -28,33 +28,32 @@ void GetWindowsVersion(HWND hEdit)
 		}
 	}
 
-	// レジストリに UBR の値が存在する場合は取得する
-	DWORD dwUBR = 0;
-	BOOL bExist = FALSE;
+	// レジストリに ReleaseID や UBR の値が存在する場合は取得する
+	TCHAR szReleaseID[32] = { 0 };
+	TCHAR szUBR[32] = { 0 };
 	{
 		HKEY hKey;
-		if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"), 0, KEY_READ, &hKey))
+		if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey))
 		{
-			DWORD dwType = REG_DWORD;
-			DWORD dwByte = sizeof(DWORD);
+			DWORD dwType = REG_SZ;
+			DWORD dwByte = sizeof(szReleaseID);
+			if (ERROR_SUCCESS == RegQueryValueEx(hKey, TEXT("ReleaseId"), 0, &dwType, (LPBYTE)&szReleaseID, &dwByte))
+			{
+				lstrcat(szReleaseID, TEXT(" "));
+			}
+			dwType = REG_DWORD;
+			dwByte = sizeof(DWORD);
+			DWORD dwUBR = 0;
 			if (ERROR_SUCCESS == RegQueryValueEx(hKey, TEXT("UBR"), 0, &dwType, (LPBYTE)&dwUBR, &dwByte))
 			{
-				bExist = TRUE;
+				wsprintf(szUBR, TEXT(".%d"), dwUBR);
 			}
 			RegCloseKey(hKey);
 		}
 	}
 
 	TCHAR szText[1024];
-	if (bExist)
-	{
-		wsprintf(szText, TEXT("Version is %d.%d (Build %d.%d)\r\n"), dwMajorVersion, dwMinorVersion, dwBuild, dwUBR);
-	}
-	else
-	{
-		wsprintf(szText, TEXT("Version is %d.%d (Build %d)\r\n"), dwMajorVersion, dwMinorVersion, dwBuild);
-	}
-
+	wsprintf(szText, TEXT("Windows %d.%d %s(OS ビルド %d%s)"), dwMajorVersion, dwMinorVersion, szReleaseID, dwBuild, szUBR);
 	SetWindowText(hEdit, szText);
 }
 
@@ -68,6 +67,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			ES_READONLY | ES_AUTOHSCROLL | ES_AUTOVSCROLL | ES_MULTILINE,
 			0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		GetWindowsVersion(hEdit);
+		break;
+	case WM_SETFOCUS:
+		SetFocus(hEdit);
+		SendMessage(hEdit, EM_SETSEL, 0, -1);
 		break;
 	case WM_SIZE:
 		MoveWindow(hEdit, 10, 10, LOWORD(lParam) - 20, HIWORD(lParam) - 20, TRUE);
